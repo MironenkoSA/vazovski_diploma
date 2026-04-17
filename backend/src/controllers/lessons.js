@@ -35,15 +35,58 @@ exports.getLesson = async (req, res) => {
       extra.myHomework = hw.rows[0] || null;
     }
 
-    // Mark article/video as done for students
-    if (req.user?.role === 'student' && ['article', 'video'].includes(lesson.type)) {
-      await query(
-        'INSERT INTO lesson_progress (user_id,lesson_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+    // Progress is marked explicitly via POST /lessons/:id/complete endpoint
+
+    // Check if student has completed this lesson
+    let isDone = false;
+    if (req.user?.role === 'student') {
+      const progress = await query(
+        'SELECT 1 FROM lesson_progress WHERE user_id=$1 AND lesson_id=$2',
         [req.user.id, lesson.id]
       );
+      isDone = progress.rows.length > 0;
     }
 
-    res.json({ ...lesson, ...extra });
+    res.json({ ...lesson, ...extra, isDone });
+  } catch(e) { res.status(500).json({ error: 'Ошибка сервера' }); }
+};
+
+// POST /lessons/:id/complete  — student marks lesson as done manually
+exports.completeLesson = async (req, res) => {
+  try {
+    const { rows } = await query('SELECT id,type FROM lessons WHERE id=$1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Урок не найден' });
+    if (!['article','video'].includes(rows[0].type))
+      return res.status(400).json({ error: 'Только статьи и видео' });
+    await query(
+      'INSERT INTO lesson_progress (user_id,lesson_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+      [req.user.id, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Ошибка сервера' }); }
+};
+
+// PUT /lessons/:id — update lesson (teacher/admin)
+exports.updateLesson = async (req, res) => {
+  try {
+    const { title, content, video_url, video_settings, article_structure, max_chars } = req.body;
+    const { rows } = await query(
+      `UPDATE lessons SET
+        title = COALESCE($1, title),
+        content = COALESCE($2, content),
+        video_url = COALESCE($3, video_url),
+        video_settings = COALESCE($4, video_settings),
+        article_structure = COALESCE($5, article_structure),
+        max_chars = $6
+       WHERE id=$7 RETURNING *`,
+      [title||null, content||null, video_url||null,
+       video_settings ? JSON.stringify(video_settings) : null,
+       article_structure ? JSON.stringify(article_structure) : null,
+       max_chars !== undefined ? (max_chars || null) : null,
+       req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Урок не найден' });
+    res.json(rows[0]);
   } catch(e) { res.status(500).json({ error: 'Ошибка сервера' }); }
 };
 
@@ -106,25 +149,46 @@ exports.submitTest = async (req, res) => {
 // POST /homework
 exports.submitHw = async (req, res) => {
   try {
-    const { lesson_id, answer } = req.body;
+    const { lesson_id, answer, file_urls } = req.body;
     if (!lesson_id) return res.status(400).json({ error: 'lesson_id обязателен' });
     if (!answer?.trim()) return res.status(400).json({ error: 'Ответ не может быть пустым' });
 
-    // FIX: prevent duplicate submission — only one pending allowed
+    // Check for existing homework
     const existing = await query(
-      "SELECT id FROM homework WHERE lesson_id=$1 AND user_id=$2 AND status='pending'",
+      'SELECT id, status, needs_revision FROM homework WHERE lesson_id=$1 AND user_id=$2 ORDER BY submitted_at DESC LIMIT 1',
       [lesson_id, req.user.id]
     );
+
     if (existing.rows.length) {
-      return res.status(409).json({ error: 'Задание уже отправлено и ожидает проверки' });
+      const prev = existing.rows[0];
+      // Pending without revision flag — block duplicate
+      if (prev.status === 'pending' && !prev.needs_revision) {
+        return res.status(409).json({ error: 'Задание уже отправлено и ожидает проверки' });
+      }
+      // needs_revision=true — treat as resubmit
+      if (prev.needs_revision) {
+        const { rows } = await query(
+          `UPDATE homework SET answer=$1, file_urls=$2, status='pending',
+           needs_revision=false, revision_count=revision_count+1,
+           grade=NULL, feedback=NULL, submitted_at=NOW()
+           WHERE id=$3 RETURNING *`,
+          [answer.trim(), JSON.stringify(file_urls || []), prev.id]
+        );
+        return res.status(200).json(rows[0]);
+      }
     }
 
+    // New submission — save file_urls too
     const { rows } = await query(
-      'INSERT INTO homework (lesson_id,user_id,answer) VALUES ($1,$2,$3) RETURNING *',
-      [lesson_id, req.user.id, answer.trim()]
+      `INSERT INTO homework (lesson_id, user_id, answer, file_urls)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [lesson_id, req.user.id, answer.trim(), JSON.stringify(file_urls || [])]
     );
     res.status(201).json(rows[0]);
-  } catch(e) { res.status(500).json({ error: 'Ошибка сервера' }); }
+  } catch(e) {
+    console.error('submitHw error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 };
 
 // GET /courses/:courseId/homework
@@ -147,29 +211,61 @@ exports.getHwForTeacher = async (req, res) => {
 exports.gradeHw = async (req, res) => {
   try {
     const { id } = req.params;
-    const { grade, feedback } = req.body;
+    const { grade, feedback, needs_revision } = req.body;
 
-    // FIX: proper check — grade can be 0
-    if (grade === undefined || grade === null || grade === '') {
-      return res.status(400).json({ error: 'Оценка обязательна' });
-    }
-    const gradeNum = Number(grade);
-    if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 100) {
-      return res.status(400).json({ error: 'Оценка должна быть числом от 0 до 100' });
+    // If sending for revision, grade is optional
+    let gradeNum = null;
+    if (!needs_revision) {
+      if (grade === undefined || grade === null || grade === '') {
+        return res.status(400).json({ error: 'Оценка обязательна' });
+      }
+      gradeNum = Number(grade);
+      if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 100) {
+        return res.status(400).json({ error: 'Оценка должна быть числом от 0 до 100' });
+      }
+    } else if (grade !== undefined && grade !== null && grade !== '') {
+      gradeNum = Number(grade); // optional grade even when sending for revision
     }
 
+    const newStatus = needs_revision ? 'pending' : 'graded';
     const { rows } = await query(
-      "UPDATE homework SET grade=$1, feedback=$2, status='graded' WHERE id=$3 RETURNING *",
-      [gradeNum, feedback?.trim() || '', id]
+      `UPDATE homework SET grade=$1, feedback=$2, status=$3, needs_revision=$4
+       WHERE id=$5 RETURNING *`,
+      [gradeNum, feedback?.trim() || '', newStatus, !!needs_revision, id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Задание не найдено' });
 
-    // Mark homework lesson as done for student
-    await query(
-      'INSERT INTO lesson_progress (user_id,lesson_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
-      [rows[0].user_id, rows[0].lesson_id]
-    );
+    // Mark done only if not sending back for revision
+    if (!needs_revision) {
+      await query(
+        'INSERT INTO lesson_progress (user_id,lesson_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+        [rows[0].user_id, rows[0].lesson_id]
+      );
+    }
 
+    res.json(rows[0]);
+  } catch(e) { res.status(500).json({ error: 'Ошибка сервера' }); }
+};
+
+// PUT /homework/:id/resubmit — student resubmits after revision request
+exports.resubmitHw = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { answer, file_urls } = req.body;
+    if (!answer?.trim()) return res.status(400).json({ error: 'Ответ не может быть пустым' });
+
+    // Verify it belongs to this user and needs revision
+    const hw = await query('SELECT * FROM homework WHERE id=$1 AND user_id=$2', [id, req.user.id]);
+    if (!hw.rows.length) return res.status(404).json({ error: 'Задание не найдено' });
+    if (!hw.rows[0].needs_revision) return res.status(400).json({ error: 'Задание не требует доработки' });
+
+    const { rows } = await query(
+      `UPDATE homework SET answer=$1, file_urls=$2, status='pending',
+        needs_revision=false, revision_count=revision_count+1,
+        grade=NULL, feedback=NULL, submitted_at=NOW()
+       WHERE id=$3 RETURNING *`,
+      [answer.trim(), JSON.stringify(file_urls || []), id]
+    );
     res.json(rows[0]);
   } catch(e) { res.status(500).json({ error: 'Ошибка сервера' }); }
 };
@@ -178,7 +274,8 @@ exports.gradeHw = async (req, res) => {
 exports.myHomework = async (req, res) => {
   try {
     const { rows } = await query(`
-      SELECT h.*, l.title AS lesson_title, c.title AS course_title, c.id AS course_id
+      SELECT h.*, l.title AS lesson_title, l.id AS lesson_id,
+             c.title AS course_title, c.id AS course_id
       FROM homework h
       JOIN lessons l ON l.id = h.lesson_id
       JOIN courses c ON c.id = l.course_id

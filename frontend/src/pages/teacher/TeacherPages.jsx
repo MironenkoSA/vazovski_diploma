@@ -12,7 +12,7 @@ export const HomeworkPage = () => {
   const [selCourse, setSelCourse] = useState(courseId || '');
   const [loading, setLoading] = useState(false);
   const [reviewing, setReviewing] = useState(null);
-  const [grade, setGrade]     = useState({ score:'', feedback:'' });
+  const [grade, setGrade]     = useState({ score:'', feedback:'', needs_revision:false });
   const [saving, setSaving]   = useState(false);
   const [success, setSuccess] = useState('');
 
@@ -30,19 +30,35 @@ export const HomeworkPage = () => {
   }, [selCourse]);
 
   const handleGrade = async () => {
-    if (grade.score===''||grade.score<0||grade.score>100) { alert('Оценка 0–100'); return; }
+    if (!grade.needs_revision && (grade.score===''||grade.score<0||grade.score>100)) {
+      alert('Укажите оценку от 0 до 100'); return;
+    }
     setSaving(true);
     try {
-      await api.put(`/homework/${reviewing.id}/grade`, { grade: parseFloat(grade.score), feedback: grade.feedback });
-      setItems(p=>p.map(h=>h.id===reviewing.id?{...h,status:'graded',grade:grade.score,feedback:grade.feedback}:h));
+      await api.put(`/homework/${reviewing.id}/grade`, { grade: parseFloat(grade.score), feedback: grade.feedback, needs_revision: grade.needs_revision });
+      setItems(p=>p.map(h=>h.id===reviewing.id?{...h,status:grade.needs_revision?'pending':'graded',grade:grade.score,feedback:grade.feedback,needs_revision:grade.needs_revision}:h));
       setReviewing(null); setGrade({score:'',feedback:''});
       setSuccess('Оценка сохранена!'); setTimeout(()=>setSuccess(''),3000);
     } catch(e){ alert(e.response?.data?.error||'Ошибка'); }
     finally { setSaving(false); }
   };
 
-  const pending = items.filter(h=>h.status==='pending');
-  const graded  = items.filter(h=>h.status==='graded');
+  const [search, setSearch] = useState('');
+
+  const filterItems = (arr) => {
+    if (!search.trim()) return arr;
+    const q = search.toLowerCase();
+    return arr.filter(h =>
+      h.student_name?.toLowerCase().includes(q) ||
+      h.lesson_title?.toLowerCase().includes(q) ||
+      h.answer?.toLowerCase().includes(q)
+    );
+  };
+
+  const pending = filterItems(items.filter(h=>h.status==='pending'));
+  const graded  = filterItems(items.filter(h=>h.status==='graded'));
+  const totalPending = items.filter(h=>h.status==='pending').length;
+  const totalGraded  = items.filter(h=>h.status==='graded').length;
 
   return (
     <Layout>
@@ -51,27 +67,88 @@ export const HomeworkPage = () => {
       </div>
       {success && <div style={{marginBottom:16}}><Alert type="success">{success}</Alert></div>}
 
-      {courses.length>1 && (
-        <select value={selCourse} onChange={e=>setSelCourse(e.target.value)} style={{marginBottom:20,maxWidth:340}}>
-          {courses.map(c=><option key={c.id} value={c.id}>{c.title}</option>)}
-        </select>
+      {/* Filters row */}
+      <div style={{display:'flex',gap:12,marginBottom:20,flexWrap:'wrap',alignItems:'center'}}>
+        {/* Course picker */}
+        {courses.length>0 && (
+          <div style={{display:'flex',flexDirection:'column',gap:4}}>
+            <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Курс</label>
+            <select value={selCourse} onChange={e=>setSelCourse(e.target.value)}
+              style={{minWidth:220,maxWidth:320,padding:'9px 14px',borderRadius:10,border:'1.5px solid var(--border)',background:'var(--surface)',fontFamily:'var(--font-b)',fontSize:14,color:'var(--navy)',cursor:'pointer'}}>
+              {courses.map(c=><option key={c.id} value={c.id}>{c.title}</option>)}
+            </select>
+          </div>
+        )}
+
+        {/* Search bar */}
+        <div style={{display:'flex',flexDirection:'column',gap:4,flex:1,minWidth:200}}>
+          <label style={{fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Поиск</label>
+          <div style={{position:'relative'}}>
+            <span style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',fontSize:16,pointerEvents:'none'}}>🔍</span>
+            <input
+              value={search}
+              onChange={e=>setSearch(e.target.value)}
+              placeholder="Студент, урок или текст ответа..."
+              style={{paddingLeft:38,width:'100%',borderRadius:10,border:'1.5px solid var(--border)',background:'var(--surface)',fontSize:14,padding:'9px 14px 9px 38px'}}
+              onFocus={e=>e.target.style.borderColor='var(--coral)'}
+              onBlur={e=>e.target.style.borderColor='var(--border)'}
+            />
+            {search && (
+              <button onClick={()=>setSearch('')} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'var(--muted)',fontSize:18,lineHeight:1,padding:0}}>×</button>
+            )}
+          </div>
+        </div>
+
+        {/* Stats badges */}
+        <div style={{display:'flex',gap:8,alignItems:'flex-end',paddingBottom:2}}>
+          <div style={{padding:'6px 14px',borderRadius:99,background:'rgba(255,107,107,0.1)',fontSize:13,fontWeight:700,color:'var(--coral)'}}>
+            ⏳ {totalPending} ожидают
+          </div>
+          <div style={{padding:'6px 14px',borderRadius:99,background:'rgba(81,207,102,0.1)',fontSize:13,fontWeight:700,color:'var(--green)'}}>
+            ✅ {totalGraded} проверено
+          </div>
+        </div>
+      </div>
+
+      {/* No results hint */}
+      {search && !pending.length && !graded.length && items.length > 0 && (
+        <div style={{textAlign:'center',padding:'32px 0',color:'var(--muted)'}}>
+          <div style={{fontSize:40,marginBottom:8}}>🔍</div>
+          <div style={{fontSize:15,fontWeight:600}}>Ничего не найдено</div>
+          <div style={{fontSize:13,marginTop:4}}>По запросу «{search}» нет совпадений</div>
+        </div>
       )}
 
       {loading ? <Spinner/> : (
         <>
           {pending.length>0 && (
             <div style={{marginBottom:32}}>
-              <h2 style={{fontSize:18,marginBottom:12}}>⏳ Ожидают проверки <span style={{color:'var(--coral)'}}>({pending.length})</span></h2>
+              <h2 style={{fontSize:18,marginBottom:12}}>
+                ⏳ Ожидают проверки <span style={{color:'var(--coral)'}}>({pending.length}{search && pending.length!==totalPending ? ` из ${totalPending}` : ''})</span>
+              </h2>
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
                 {pending.map(h=>(
                   <Card key={h.id} style={{display:'flex',alignItems:'center',gap:16,padding:'16px 20px'}}>
                     <div style={{width:44,height:44,borderRadius:12,background:'rgba(255,107,107,0.1)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>📝</div>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontWeight:700,fontSize:14}}>{h.student_name}</div>
-                      <div style={{fontSize:13,color:'var(--muted)'}}>{h.lesson_title} · {new Date(h.submitted_at).toLocaleDateString('ru')}</div>
-                      <div style={{fontSize:13,color:'var(--text)',marginTop:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:400}}>{h.answer}</div>
+                      <div style={{fontWeight:700,fontSize:14}}>
+                        {search && h.student_name?.toLowerCase().includes(search.toLowerCase())
+                          ? <span style={{background:'rgba(255,107,107,0.15)',borderRadius:4,padding:'0 2px'}}>{h.student_name}</span>
+                          : h.student_name}
+                      </div>
+                      <div style={{fontSize:13,color:'var(--muted)'}}>
+                        {search && h.lesson_title?.toLowerCase().includes(search.toLowerCase())
+                          ? <span style={{background:'rgba(255,107,107,0.15)',borderRadius:4,padding:'0 2px'}}>{h.lesson_title}</span>
+                          : h.lesson_title}
+                        {' · '}{new Date(h.submitted_at).toLocaleDateString('ru')}
+                      </div>
+                      <div style={{display:'flex',gap:8,alignItems:'center',marginTop:4,flexWrap:'wrap'}}>
+                        {h.needs_revision && <span style={{fontSize:11,fontWeight:700,color:'#B07800',background:'rgba(255,179,71,0.15)',padding:'2px 8px',borderRadius:99}}>↩ Отправлено на доработку</span>}
+                        {h.revision_count>0 && <span style={{fontSize:11,color:'var(--muted)'}}>Доработок: {h.revision_count}</span>}
+                        <span style={{fontSize:13,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:300}}>{h.answer}</span>
+                      </div>
                     </div>
-                    <Btn size="sm" onClick={()=>{setReviewing(h);setGrade({score:'',feedback:''})}}>Проверить</Btn>
+                    <Btn size="sm" onClick={()=>{setReviewing(h);setGrade({score:'',feedback:'',needs_revision:false})}} variant={h.needs_revision?'secondary':'default'}>{h.needs_revision?'↩ На доработке':'Проверить'}</Btn>
                   </Card>
                 ))}
               </div>
@@ -80,7 +157,9 @@ export const HomeworkPage = () => {
 
           {graded.length>0 && (
             <div>
-              <h2 style={{fontSize:18,marginBottom:12}}>✅ Проверенные ({graded.length})</h2>
+              <h2 style={{fontSize:18,marginBottom:12}}>
+                ✅ Проверенные ({graded.length}{search && graded.length!==totalGraded ? ` из ${totalGraded}` : ''})
+              </h2>
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
                 {graded.map(h=>(
                   <Card key={h.id} style={{display:'flex',alignItems:'center',gap:16,padding:'14px 20px'}}>
@@ -105,12 +184,56 @@ export const HomeworkPage = () => {
         {reviewing && (
           <div style={{display:'flex',flexDirection:'column',gap:16}}>
             <div style={{background:'#F4F6FB',borderRadius:10,padding:14}}>
-              <div style={{fontSize:12,fontWeight:700,color:'var(--violet)',marginBottom:6,textTransform:'uppercase'}}>Ответ студента</div>
-              <p style={{fontSize:14,lineHeight:1.7,color:'var(--text)'}}>{reviewing.answer}</p>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                <div style={{fontSize:12,fontWeight:700,color:'var(--violet)',textTransform:'uppercase'}}>Ответ студента</div>
+                {reviewing.revision_count>0 && <span style={{fontSize:11,color:'var(--muted)'}}>Доработок: {reviewing.revision_count}</span>}
+              </div>
+              {reviewing.needs_revision && (
+                <div style={{marginBottom:8,padding:'6px 10px',background:'rgba(255,179,71,0.12)',borderRadius:8,fontSize:12,color:'#B07800',fontWeight:600}}>
+                  ⚠️ Это задание было отправлено на доработку — студент ещё не переотправил
+                </div>
+              )}
+              <p style={{fontSize:14,lineHeight:1.7,color:'var(--text)',whiteSpace:'pre-wrap'}}>{reviewing.answer}</p>
+              {reviewing.file_urls?.length>0 && (
+                <div style={{marginTop:10}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'var(--muted)',marginBottom:8}}>Прикреплённые файлы:</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    {reviewing.file_urls.map((f,i)=>{
+                      const isImg = f.type?.startsWith('image/') || /\.(jpg|jpeg|png)$/i.test(f.name);
+                      const isPdf = f.type==='application/pdf' || /\.pdf$/i.test(f.name);
+                      return (
+                        <div key={i}>
+                          {isImg ? (
+                            <div>
+                              <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>🖼️ {f.name}</div>
+                              <img src={f.data} alt={f.name}
+                                style={{maxWidth:'100%',maxHeight:300,borderRadius:8,border:'1.5px solid var(--border)',objectFit:'contain',display:'block'}}/>
+                              <a href={f.data} download={f.name}
+                                style={{fontSize:11,color:'var(--teal)',marginTop:4,display:'inline-block'}}>
+                                ⬇ Скачать
+                              </a>
+                            </div>
+                          ) : (
+                            <a href={f.data} download={f.name}
+                              style={{fontSize:13,color:'var(--teal)',display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'#F4F6FB',borderRadius:8,textDecoration:'none'}}>
+                              {isPdf?'📄':'📎'} {f.name}
+                              <span style={{marginLeft:'auto',fontSize:11,color:'var(--muted)'}}>⬇ Скачать</span>
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
             <div>
-              <label style={{fontSize:13,fontWeight:700,display:'block',marginBottom:6}}>Оценка (0–100)</label>
-              <input type="number" min="0" max="100" value={grade.score} onChange={e=>setGrade(g=>({...g,score:e.target.value}))} placeholder="85"/>
+              <label style={{fontSize:13,fontWeight:700,display:'block',marginBottom:6}}>
+                Оценка (0–100){grade.needs_revision && <span style={{fontWeight:400,color:'var(--muted)',marginLeft:6}}>— необязательно при доработке</span>}
+              </label>
+              <input type="number" min="0" max="100" value={grade.score}
+                onChange={e=>setGrade(g=>({...g,score:e.target.value}))}
+                placeholder={grade.needs_revision?"Оставьте пустым или укажите":"85"}/>
             </div>
             <div>
               <label style={{fontSize:13,fontWeight:700,display:'block',marginBottom:6}}>Комментарий</label>
@@ -120,9 +243,19 @@ export const HomeworkPage = () => {
                 onFocus={e=>e.target.style.borderColor='var(--coral)'} onBlur={e=>e.target.style.borderColor='var(--border)'}
               />
             </div>
+            <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderTop:'1px solid var(--border)'}}>
+              <input type="checkbox" id="needs_revision" checked={grade.needs_revision}
+                onChange={e=>setGrade(g=>({...g,needs_revision:e.target.checked}))}
+                style={{width:16,height:16,cursor:'pointer'}}/>
+              <label htmlFor="needs_revision" style={{fontSize:14,cursor:'pointer',color:'var(--text)'}}>
+                ⚠️ Отправить на доработку (студент сможет переписать ответ)
+              </label>
+            </div>
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
               <Btn variant="ghost" onClick={()=>setReviewing(null)}>Отмена</Btn>
-              <Btn loading={saving} onClick={handleGrade}>Сохранить оценку ✓</Btn>
+              <Btn loading={saving} onClick={handleGrade} variant={grade.needs_revision?'secondary':'default'}>
+                {grade.needs_revision ? 'Отправить на доработку ↩' : 'Сохранить оценку ✓'}
+              </Btn>
             </div>
           </div>
         )}
@@ -191,25 +324,49 @@ export const MyHomeworkPage = () => {
   const [items, setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(()=>{
+  const load = () => {
+    setLoading(true);
     api.get('/my/homework').then(r=>setItems(r.data)).catch(e => console.error(e)).finally(()=>setLoading(false));
-  },[]);
+  };
+  useEffect(()=>{ load(); },[]);
 
   return (
     <Layout>
-      <h1 style={{fontSize:28,marginBottom:24}}>✏️ Мои задания</h1>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24}}>
+        <h1 style={{fontSize:28}}>✏️ Мои задания</h1>
+        <button onClick={load} style={{background:'none',border:'1.5px solid var(--border)',borderRadius:8,padding:'7px 14px',cursor:'pointer',fontSize:13,fontWeight:600,color:'var(--muted)',fontFamily:'var(--font-b)',display:'flex',alignItems:'center',gap:6}}
+          onMouseEnter={e=>e.currentTarget.style.borderColor='var(--coral)'}
+          onMouseLeave={e=>e.currentTarget.style.borderColor='var(--border)'}>
+          🔄 Обновить
+        </button>
+      </div>
       {loading ? <Spinner/> : !items.length ? (
         <Empty icon="📭" title="Нет заданий" text="Выполните домашние задания в ваших курсах"/>
       ) : (
         <div style={{display:'flex',flexDirection:'column',gap:12}}>
           {items.map(h=>(
             <Card key={h.id} style={{display:'flex',alignItems:'flex-start',gap:16}}>
-              <div style={{fontSize:36,flexShrink:0}}>{h.status==='graded'?'✅':'📬'}</div>
+              <div style={{fontSize:36,flexShrink:0}}>
+                {h.status==='graded' ? '✅' : h.needs_revision ? '⚠️' : '📬'}
+              </div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontWeight:700,fontSize:15,marginBottom:2}}>{h.lesson_title}</div>
                 <div style={{fontSize:13,color:'var(--muted)',marginBottom:8}}>{h.course_title} · {new Date(h.submitted_at).toLocaleDateString('ru')}</div>
+
+                {/* Revision banner — most prominent */}
+                {h.needs_revision && (
+                  <div style={{marginBottom:10,padding:'10px 14px',background:'rgba(255,179,71,0.1)',border:'2px solid rgba(255,179,71,0.5)',borderRadius:10}}>
+                    <div style={{fontWeight:700,fontSize:14,color:'#B07800',marginBottom:4}}>⚠️ Преподаватель отправил на доработку</div>
+                    {h.feedback && <p style={{fontSize:13,color:'var(--text)',margin:0,lineHeight:1.55}}>{h.feedback}</p>}
+                    <a href={`/courses/${h.course_id}/lessons/${h.lesson_id}`}
+                      style={{display:'inline-block',marginTop:8,fontSize:13,fontWeight:700,color:'var(--coral)',textDecoration:'none'}}>
+                      Исправить работу →
+                    </a>
+                  </div>
+                )}
+
                 <p style={{fontSize:13,color:'var(--text)',background:'#F4F6FB',padding:'10px 12px',borderRadius:8,lineHeight:1.6,maxHeight:80,overflow:'hidden'}}>{h.answer}</p>
-                {h.status==='graded' && h.feedback && (
+                {h.status==='graded' && h.feedback && !h.needs_revision && (
                   <div style={{marginTop:8,paddingLeft:12,borderLeft:'3px solid var(--teal)',fontSize:13,color:'var(--muted)'}}>{h.feedback}</div>
                 )}
               </div>
@@ -219,7 +376,11 @@ export const MyHomeworkPage = () => {
                   <div style={{fontSize:11,color:'var(--muted)'}}>из 100</div>
                 </div>
               )}
-              {h.status==='pending' && <Badge color="amber">На проверке</Badge>}
+              {h.status==='pending' && !h.needs_revision && (
+                <div style={{flexShrink:0}}>
+                  <Badge color="amber">На проверке</Badge>
+                </div>
+              )}
             </Card>
           ))}
         </div>

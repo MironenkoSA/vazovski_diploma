@@ -98,9 +98,12 @@ exports.confirmOrder = async (req, res) => {
 
 exports.myOrders = async (req, res) => {
   try {
+    // Only show orders for courses the student actually has access to (enrolled)
     const { rows } = await query(`
       SELECT o.*, c.title AS course_title, c.id AS course_id
-      FROM orders o JOIN courses c ON c.id=o.course_id
+      FROM orders o
+      JOIN courses c ON c.id = o.course_id
+      JOIN enrollments e ON e.course_id = o.course_id AND e.user_id = o.user_id
       WHERE o.user_id=$1 ORDER BY o.created_at DESC
     `, [req.user.id]);
     res.json(rows);
@@ -194,13 +197,14 @@ exports.dashboard = async (req, res) => {
     const { rows } = await query(`
       SELECT c.id, c.title,
         COUNT(DISTINCT l.id) AS total,
-        COUNT(DISTINCT lp.lesson_id) AS done
+        COUNT(DISTINCT lp.lesson_id) AS done,
+        MAX(e.enrolled_at) AS enrolled_at
       FROM enrollments e
       JOIN courses c ON c.id=e.course_id
       LEFT JOIN lessons l ON l.course_id=c.id
       LEFT JOIN lesson_progress lp ON lp.lesson_id=l.id AND lp.user_id=$1
-      WHERE e.user_id=$1 GROUP BY c.id ORDER BY e.enrolled_at DESC
+      WHERE e.user_id=$1 GROUP BY c.id ORDER BY MAX(e.enrolled_at) DESC
     `, [req.user.id]);
     res.json(rows);
-  } catch(e) { res.status(500).json({ error: 'Ошибка сервера' }); }
+  } catch(e) { console.error('dashboard ERROR:', e.message); res.status(500).json({ error: e.message }); }
 };

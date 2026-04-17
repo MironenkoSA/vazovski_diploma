@@ -65,10 +65,15 @@ export const CatalogPage = () => {
     <div style={{minHeight:'100vh',background:'var(--bg)'}}>
       {/* Top nav */}
       <header style={{background:'var(--navy)',padding:'0 32px',height:64,display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,zIndex:100,boxShadow:'0 2px 20px rgba(0,0,0,0.15)'}}>
-        <Link to={user?'/dashboard':'/'} style={{display:'flex',alignItems:'center',gap:10,textDecoration:'none'}}>
-          <div style={{width:36,height:36,background:'var(--coral)',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--font-h)',fontWeight:900,color:'#fff',fontSize:20}}>P</div>
-          <span style={{fontFamily:'var(--font-h)',fontWeight:900,fontSize:22,color:'#fff'}}>PM<span style={{color:'var(--coral)'}}>Edu</span></span>
-        </Link>
+        <div style={{display:'flex',alignItems:'center',gap:16}}>
+          <button onClick={()=>window.history.back()} style={{background:'rgba(255,255,255,0.1)',border:'none',color:'rgba(255,255,255,0.7)',borderRadius:8,padding:'7px 14px',cursor:'pointer',fontSize:13,fontWeight:600,fontFamily:'var(--font-b)',display:'flex',alignItems:'center',gap:6,transition:'background 0.15s'}} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.18)'} onMouseLeave={e=>e.currentTarget.style.background='rgba(255,255,255,0.1)'}>
+            ← Назад
+          </button>
+          <Link to={user?'/dashboard':'/'} style={{display:'flex',alignItems:'center',gap:10,textDecoration:'none'}}>
+            <div style={{width:36,height:36,background:'var(--coral)',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--font-h)',fontWeight:900,color:'#fff',fontSize:20}}>P</div>
+            <span style={{fontFamily:'var(--font-h)',fontWeight:900,fontSize:22,color:'#fff'}}>PM<span style={{color:'var(--coral)'}}>Edu</span></span>
+          </Link>
+        </div>
         <div style={{display:'flex',gap:10}}>
           {user ? <Link to="/dashboard"><Btn size="sm" variant="ghost" style={{color:'rgba(255,255,255,0.7)',borderColor:'rgba(255,255,255,0.2)'}}>Кабинет</Btn></Link>
                 : <><Link to="/login"><Btn size="sm" variant="ghost" style={{color:'rgba(255,255,255,0.7)',borderColor:'rgba(255,255,255,0.2)'}}>Войти</Btn></Link>
@@ -165,7 +170,12 @@ export const CoursePurchasePage = () => {
           <div style={{width:36,height:36,background:'var(--coral)',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--font-h)',fontWeight:900,color:'#fff',fontSize:20}}>P</div>
           <span style={{fontFamily:'var(--font-h)',fontWeight:900,fontSize:22,color:'#fff'}}>PM<span style={{color:'var(--coral)'}}>Edu</span></span>
         </Link>
-        <Link to="/catalog" style={{color:'rgba(255,255,255,0.6)',fontSize:14}}>← Все курсы</Link>
+        <div style={{display:'flex',gap:12,alignItems:'center'}}>
+          <button onClick={()=>window.history.back()} style={{background:'rgba(255,255,255,0.1)',border:'none',color:'rgba(255,255,255,0.7)',borderRadius:8,padding:'7px 14px',cursor:'pointer',fontSize:13,fontWeight:600,fontFamily:'var(--font-b)'}}>
+            ← Назад
+          </button>
+          <Link to="/catalog" style={{color:'rgba(255,255,255,0.6)',fontSize:14}}>Все курсы</Link>
+        </div>
       </header>
 
       {course && (

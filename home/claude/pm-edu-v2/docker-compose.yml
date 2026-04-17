@@ -1,0 +1,39 @@
+name: pmedu
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pmedu
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U postgres"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_NAME: pmedu
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      JWT_SECRET: change_this_in_production
+      FRONTEND_URL: http://localhost:3000
+    ports: ["4000:4000"]
+    command: sh -c "node src/config/database.js && node src/index.js"
+
+  frontend:
+    build: ./frontend
+    depends_on: [backend]
+    ports: ["3000:80"]
+
+volumes:
+  pgdata:

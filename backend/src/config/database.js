@@ -23,9 +23,7 @@ if (require.main === module) {
         role VARCHAR(20) NOT NULL DEFAULT 'student' CHECK (role IN ('student','teacher','admin')),
         avatar_url TEXT DEFAULT NULL,
         created_at TIMESTAMP DEFAULT NOW())`)
-
-      // Add avatar_url if upgrading existing DB
-      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT NULL`);
+;
 
       await query(`CREATE TABLE IF NOT EXISTS courses (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -82,6 +80,17 @@ if (require.main === module) {
         amount NUMERIC(10,2) NOT NULL,
         status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending','paid','cancelled')),
         created_at TIMESTAMP DEFAULT NOW())`);
+
+      // ── Upgrade columns (safe on both fresh and existing DB) ──
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT NULL`);
+      await query(`ALTER TABLE lessons ADD COLUMN IF NOT EXISTS video_settings JSONB DEFAULT NULL`);
+      await query(`ALTER TABLE lessons ADD COLUMN IF NOT EXISTS article_structure JSONB DEFAULT NULL`);
+      await query(`ALTER TABLE lessons ADD COLUMN IF NOT EXISTS max_chars INT DEFAULT NULL`);
+      await query(`ALTER TABLE homework ADD COLUMN IF NOT EXISTS file_urls JSONB DEFAULT '[]'`);
+      await query(`ALTER TABLE homework ADD COLUMN IF NOT EXISTS needs_revision BOOLEAN DEFAULT false`);
+      await query(`ALTER TABLE homework ADD COLUMN IF NOT EXISTS revision_count INT DEFAULT 0`);
+      await query(`ALTER TABLE homework ADD COLUMN IF NOT EXISTS lesson_max_chars INT DEFAULT NULL`);
+      await query(`ALTER TABLE lesson_progress ADD COLUMN IF NOT EXISTS watched_pct INT DEFAULT 0`);
 
       // Guard
       const existing = await query(`SELECT COUNT(*) FROM users`);

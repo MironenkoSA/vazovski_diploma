@@ -40,7 +40,6 @@ export default function App() {
           <Route path="/courses/:id/buy"                 element={<CoursePurchasePage/>}/>
           <Route path="/courses/:id"                     element={<Guard><CourseDetailPage/></Guard>}/>
           <Route path="/courses/:courseId/lessons/:lessonId" element={<Guard><LessonPage/></Guard>}/>
-          <Route path="/my-courses"                      element={<Guard roles={['student']}><DashboardPage/></Guard>}/>
           <Route path="/my-homework"                     element={<Guard roles={['student']}><MyHomeworkPage/></Guard>}/>
           <Route path="/my-orders"                       element={<Guard roles={['student']}><MyOrdersPage/></Guard>}/>
 

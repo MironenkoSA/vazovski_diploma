@@ -4,9 +4,8 @@ import { useAuth } from '../store/AuthContext';
 
 const navByRole = {
   student: [
-    { to:'/dashboard',    icon:'🏠', label:'Главная' },
+    { to:'/dashboard',    icon:'🏠', label:'Мои курсы' },
     { to:'/catalog',      icon:'🛒', label:'Каталог курсов' },
-    { to:'/my-courses',   icon:'📚', label:'Мои курсы' },
     { to:'/simulators',   icon:'🎮', label:'Тренажёры' },
     { to:'/my-homework',  icon:'✏️', label:'Мои задания' },
     { to:'/my-orders',    icon:'🧾', label:'Заказы' },
@@ -42,8 +41,21 @@ export default function Layout({ children }) {
   const items = navByRole[user?.role] || [];
 
   const initials = user?.name?.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2) || '??';
-  const avatarDisplay = user?.avatar_url || initials;
-  const isEmoji = user?.avatar_url && user.avatar_url.length <= 4;
+  const av = user?.avatar_url;
+  const isPhoto = av && (av.startsWith('data:') || av.startsWith('http'));
+  const isEmoji = av && !isPhoto && av.length <= 4;
+  const AvatarContent = ({ size=40 }) => (
+    <div style={{ width:size, height:size, borderRadius:'50%', flexShrink:0, overflow:'hidden',
+      background: isPhoto ? '#000' : isEmoji ? 'rgba(255,255,255,0.1)' : roleGradient[user?.role],
+      display:'flex', alignItems:'center', justifyContent:'center',
+      fontWeight:800, color:'#fff', fontSize: isEmoji ? size*0.6 : size*0.38,
+    }}>
+      {isPhoto
+        ? <img src={av} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+        : (isEmoji ? av : initials)
+      }
+    </div>
+  );
 
   return (
     <div style={{ display:'flex', minHeight:'100vh', background:'var(--bg)' }}>
@@ -66,7 +78,7 @@ export default function Layout({ children }) {
         {!mini && (
           <div style={{ padding:'18px 20px', borderBottom:'1px solid rgba(255,255,255,0.07)' }}>
             <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-              <div style={{ width:40, height:40, borderRadius:'50%', background: isEmoji ? 'rgba(255,255,255,0.1)' : roleGradient[user?.role], display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, color:'#fff', fontSize: isEmoji ? 24 : 15, flexShrink:0 }}>{avatarDisplay}</div>
+              <AvatarContent size={40}/>
               <div style={{ overflow:'hidden' }}>
                 <div style={{ color:'#fff', fontWeight:700, fontSize:14, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{user?.name}</div>
                 <div style={{ fontSize:12, color:roleColor[user?.role], fontWeight:600 }}>{roleLabel[user?.role]}</div>
@@ -76,7 +88,7 @@ export default function Layout({ children }) {
         )}
         {mini && (
           <div style={{ padding:'14px', display:'flex', justifyContent:'center' }}>
-            <div style={{ width:40, height:40, borderRadius:'50%', background: isEmoji ? 'rgba(255,255,255,0.1)' : roleGradient[user?.role], display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, color:'#fff', fontSize: isEmoji ? 24 : 15 }}>{avatarDisplay}</div>
+            <AvatarContent size={40}/>
           </div>
         )}
 
