@@ -127,17 +127,54 @@ const VideoPlayer=({lesson,onComplete,isDone})=>{
     try{await api.post(`/lessons/${lesson.id}/complete`);onComplete();}
     catch(e){console.error(e);}finally{setMarking(false);}
   };
-  const embedUrl=lesson.video_url?.includes('watch?v=')?lesson.video_url.replace('watch?v=','embed/'):lesson.video_url;
-  const isYT=lesson.video_url?.includes('youtube')||lesson.video_url?.includes('youtu.be');
+  const url = lesson.video_url || '';
+
+  // Detect platform
+  const isYT      = url.includes('youtube') || url.includes('youtu.be');
+  const isVimeo   = url.includes('vimeo.com');
+  const isRuTube  = url.includes('rutube.ru');
+  const isGDrive  = url.includes('drive.google.com');
+  const isIframe  = isYT || isVimeo || isRuTube || isGDrive;
+
+  // Build embed URL per platform
+  const getEmbedUrl = () => {
+    if (isYT) {
+      return url.includes('watch?v=')
+        ? url.replace('watch?v=', 'embed/').split('&')[0]
+        : url;
+    }
+    if (isVimeo) {
+      const m = url.match(/vimeo\.com\/(\d+)/);
+      return m ? `https://player.vimeo.com/video/${m[1]}` : url;
+    }
+    if (isRuTube) {
+      if (url.includes('/play/embed/')) return url;
+      const m = url.match(/rutube\.ru\/video\/([a-zA-Z0-9]+)/);
+      return m ? `https://rutube.ru/play/embed/${m[1]}/` : url;
+    }
+    if (isGDrive) {
+      // Любой формат ссылки → /preview
+      // drive.google.com/file/d/FILE_ID/view  → /preview
+      // drive.google.com/open?id=FILE_ID      → /file/d/FILE_ID/preview
+      // drive.google.com/uc?id=FILE_ID        → /file/d/FILE_ID/preview
+      const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/) ||
+                url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (m) return `https://drive.google.com/file/d/${m[1]}/preview`;
+      if (url.includes('/preview')) return url;
+      return url;
+    }
+    return url;
+  };
+  const embedUrl = getEmbedUrl();
   return(
     <div style={{display:'flex',flexDirection:'column',gap:16}}>
       <div style={{borderRadius:16,overflow:'hidden',aspectRatio:'16/9',background:'#000',boxShadow:'var(--shadow-lg)'}}>
-        {isYT?(
+        {isIframe?(
           <iframe src={embedUrl} width="100%" height="100%" frameBorder="0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen title={lesson.title}/>
-        ):lesson.video_url?(
-          <video src={lesson.video_url} controls width="100%" height="100%" style={{objectFit:'contain'}}
+        ):url?(
+          <video src={url} controls width="100%" height="100%" style={{objectFit:'contain'}}
             onTimeUpdate={e=>{const v=e.target;if(!isDone&&v.duration&&v.currentTime/v.duration>0.8){setWatchedEnough(true);clearInterval(timerRef.current);}}}/>
         ):(
           <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,255,255,0.4)',fontSize:15}}>Видео не загружено</div>
@@ -476,10 +513,10 @@ const LessonEditor=({lesson, onSave})=>{
           <div>
             <label style={{fontSize:13,fontWeight:700,display:'block',marginBottom:6}}>URL видео</label>
             <input value={form.video_url} onChange={e=>setForm(f=>({...f,video_url:e.target.value}))}
-              placeholder="https://www.youtube.com/watch?v=... или прямая ссылка на видеофайл"
+              placeholder="https://rutube.ru/video/... или https://drive.google.com/file/d/..."
               style={{width:'100%'}}/>
             <div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>
-              Поддерживается YouTube, Vimeo и прямые ссылки на .mp4
+              Поддерживается RuTube, Google Drive, Vimeo, YouTube и прямые .mp4
             </div>
           </div>
         )}
